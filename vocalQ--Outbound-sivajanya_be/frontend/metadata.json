@@ -1,0 +1,8 @@
+{
+  "name": "VocalQ.ai",
+  "description": "A high-fidelity conversational intelligence platform for enterprise voice operations, featuring real-time neural processing monitoring and advanced behavioral analytics.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

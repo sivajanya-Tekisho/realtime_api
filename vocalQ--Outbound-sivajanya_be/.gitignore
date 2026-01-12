@@ -1,0 +1,15 @@
+# Virtual environments
+venv/
+**/venv/
+.venv/
+env/
+ENV/
+
+# Python cache and build
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment files
+.env
+.env.local
