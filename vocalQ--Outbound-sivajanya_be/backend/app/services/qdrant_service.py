@@ -1,9 +1,9 @@
 import logging
 import sys
 import asyncio
+import httpx
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
-from openai import AsyncOpenAI
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -16,27 +16,18 @@ class QdrantService:
             url=settings.QDRANT_URL,
             api_key=settings.QDRANT_API_KEY
         )
-        self.openai = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         self.collection_name = "knowledge_base"
-        self.vector_size = 1536 # OpenAI text-embedding-3-small
+        self.vector_size = 768 # Gemini text-embedding-004
 
-        # We'll use a task to ensure collection exists without blocking init
-        # asyncio.create_task(self._ensure_collection())
-        logger.warning("Skipping Qdrant collection check to prevent startup crash")
+        # Check collection on startup
+        asyncio.create_task(self._ensure_collection())
         print("--- Async QdrantService Initialized ---")
         sys.stdout.flush()
 
-    async def get_embedding(self, text: str) -> list:
-        """Generate embedding using OpenAI"""
+    async def _ensure_collection(self):
+        """Ensure Qdrant collection exists and has correct dimensions."""
         try:
-            response = await self.openai.embeddings.create(
-                input=text,
-                model="text-embedding-3-small"
-            )
-            return response.data[0].embedding
-        except Exception as e:
-            logger.error(f"OpenAI Embedding failed: {e}")
-            return []
+            collections_response = await self.client.get_collections()
             collections = collections_response.collections
             exists = any(c.name == self.collection_name for c in collections)
             
@@ -65,13 +56,36 @@ class QdrantService:
         except Exception as e:
             logger.error(f"Failed to ensure Qdrant collection: {e}")
 
+    async def get_embedding(self, text: str) -> list:
+        """Generate embedding using Gemini"""
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={settings.GEMINI_API_KEY}"
+        payload = {
+            "model": "models/text-embedding-004",
+            "content": {
+                "parts": [{"text": text}]
+            }
+        }
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(url, json=payload, timeout=10.0)
+                response.raise_for_status()
+                data = response.json()
+                return data["embedding"]["values"]
+            except Exception as e:
+                logger.error(f"Gemini Embedding failed: {e}")
+                return []
+
     async def search(self, query_text: str, limit: int = 3):
         """Search for relevant documents in Qdrant (Async)."""
         try:
-            # Generate embedding for query using OpenAI
+            # Generate embedding for query
             query_vector = await self.get_embedding(query_text)
             
-            # Use query_points method (correct API)
+            if not query_vector:
+                return []
+
+            # Use query_points method
             search_result = await self.client.query_points(
                 collection_name=self.collection_name,
                 query=query_vector,
@@ -90,6 +104,9 @@ class QdrantService:
         """Add a document to the knowledge base (Async)."""
         try:
             vector = await self.get_embedding(text)
+            if not vector:
+                raise ValueError("Failed to generate embedding")
+
             import uuid
             response = await self.client.upsert(
                 collection_name=self.collection_name,
@@ -142,44 +159,6 @@ class QdrantService:
         except Exception as e:
             logger.error(f"Failed to delete document: {e}")
             return False
-    async def add_point(self, point_id: int, vector: list, payload: dict):
-        """Add a single point (chunk) to the knowledge base."""
-        try:
-            await self.client.upsert(
-                collection_name=self.collection_name,
-                points=[
-                    models.PointStruct(
-                        id=point_id,
-                        vector=vector,
-                        payload=payload
-                    )
-                ]
-            )
-            logger.info(f"Point {point_id} added to Qdrant")
-        except Exception as e:
-            logger.error(f"Failed to add point to Qdrant: {e}", exc_info=True)
-            raise
-
-    async def delete_by_metadata(self, key: str, value: str):
-        """Delete all points matching a metadata condition."""
-        try:
-            await self.client.delete(
-                collection_name=self.collection_name,
-                points_selector=models.FilterSelector(
-                    filter=models.Filter(
-                        must=[
-                            models.FieldCondition(
-                                key=f"metadata.{key}",
-                                match=models.MatchValue(value=value)
-                            )
-                        ]
-                    )
-                )
-            )
-            logger.info(f"Deleted points with {key}={value}")
-        except Exception as e:
-            logger.error(f"Failed to delete by metadata: {e}")
-            raise
 
     async def clear_knowledge_base(self):
         """Delete and recreate the knowledge base collection."""

@@ -6,7 +6,6 @@ pydantic-settings
 python-dotenv
 websockets
 httpx
-openai
 pandas
 qdrant-client
 python-dateutil

@@ -6,6 +6,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from app.services.openai_realtime_service import OpenAIRealtimeService
+from app.services.gemini_realtime_service import GeminiRealtimeService
 from app.services.llm_service import LLMService
 from app.services.vad_service import vad_service
 from app.core.supabase_client import supabase
@@ -27,7 +28,8 @@ async def websocket_endpoint(websocket: WebSocket):
         except Exception as e:
             logger.error(f"Failed to send to Twilio: {e}")
 
-    realtime_service = OpenAIRealtimeService(stream_sid=None, send_to_twilio_func=send_to_twilio)
+    # realtime_service = OpenAIRealtimeService(stream_sid=None, send_to_twilio_func=send_to_twilio)
+    realtime_service = GeminiRealtimeService(stream_sid=None, send_to_twilio_func=send_to_twilio)
     init_task = asyncio.create_task(realtime_service.connect())
 
     call_id = str(uuid.uuid4())

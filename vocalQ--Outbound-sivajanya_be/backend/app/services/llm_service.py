@@ -1,11 +1,9 @@
 import logging
 import json
-from openai import AsyncOpenAI
+import httpx
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-aclient = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 class LLMService:
     _greeting = "Hello, thank you for calling VocalQ.ai support. How can I help you today?"
@@ -22,7 +20,7 @@ class LLMService:
     @classmethod
     async def summarize_call(cls, transcript: list) -> str:
         """
-        Generates a summary of the call transcript using an LLM.
+        Generates a summary of the call transcript using Gemini 2.0 Flash.
         Transcript is expected to be a list of dicts: [{"role": "user/assistant", "content": "..."}]
         """
         if not transcript:
@@ -36,23 +34,36 @@ class LLMService:
                 content = turn.get("content", "")
                 conversation_text += f"{role.upper()}: {content}\n"
             
-            system_prompt = (
+            system_instruction = (
                 "You are an expert AI call analyst. Summarize the following phone conversation concisely. "
                 "Identify the main topic, the user's intent, and the outcome."
             )
             
-            response = await aclient.chat.completions.create(
-                model="gpt-4o-mini", # or gpt-3.5-turbo
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Here is the transcript:\n\n{conversation_text}"}
-                ],
-                max_tokens=150
-            )
+            prompt = f"{system_instruction}\n\nHere is the transcript:\n\n{conversation_text}"
             
-            summary = response.choices[0].message.content.strip()
-            return summary
+            # Gemini Check
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={settings.GEMINI_API_KEY}"
+            payload = {
+                "contents": [{
+                    "parts": [{"text": prompt}]
+                }]
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload, timeout=30.0)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Extract text
+                # Structure: candidates[0].content.parts[0].text
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts:
+                        return parts[0].get("text", "").strip()
             
+            return "Summary unavailable (No content returned)."
+
         except Exception as e:
-            logger.error(f"Error generating summary: {e}")
+            logger.error(f"Error generating summary with Gemini: {e}")
             return "Summary generation failed."

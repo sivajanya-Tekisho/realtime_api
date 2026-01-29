@@ -38,7 +38,7 @@ async def add_knowledge_base():
             "metadata": {"category": "languages", "source": "features"}
         },
         {
-            "text": "Our platform uses Whisper for accurate speech-to-text transcription and OpenAI's TTS for natural sounding responses.",
+            "text": "Our platform uses Whisper for accurate speech-to-text transcription and Google's Gemini Multimodal Live API for natural sounding responses.",
             "metadata": {"category": "technical", "source": "technical_specs"}
         },
         {
